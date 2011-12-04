@@ -142,7 +142,10 @@ class UnicreditImport(BankImporter):
                         tdest == None:
                     # when paid by card the description of place is in
                     # last of "transaction details"
-                    tdest = "%s" % (normalize_field(row[17]))
+                    for i in reversed(range(13,19)):
+                        if normalize_field(row[18]) != "":
+                            tdest = "%s" % (normalize_field(row[i]))
+                            break
 
                 tmessage = "%s %s %s %s %s %s" % (row[13],
                                                   row[14],
