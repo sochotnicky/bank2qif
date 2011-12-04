@@ -41,7 +41,7 @@ def normalize_field(text):
     return ret.replace('"', '').replace("'", "").strip()
 
 def normalize_num(text):
-    return text.replace(',', '.').strip()
+    return text.replace(',', '.').replace(' ', '').strip()
 
 
 class TransactionData(object):
