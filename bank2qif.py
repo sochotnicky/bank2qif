@@ -143,7 +143,7 @@ class UnicreditImport(BankImporter):
                     # when paid by card the description of place is in
                     # last of "transaction details"
                     for i in reversed(range(13,19)):
-                        if normalize_field(row[18]) != "":
+                        if normalize_field(row[i]) != "":
                             tdest = "%s" % (normalize_field(row[i]))
                             break
 
