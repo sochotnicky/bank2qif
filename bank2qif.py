@@ -22,6 +22,13 @@ import argparse
 import re
 from datetime import date
 
+class BadRecordTypeException(Exception):
+    def __init__(self, line_no):
+        self._line_no = line_no
+
+    def __str__(self):
+        return "Bad record type on line: %s" % (self._line_no,)
+
 
 def unicode_csv_reader(unicode_csv_data, dialect=csv.excel, **kwargs):
     # csv.py doesn't do Unicode; encode temporarily as UTF-8:
@@ -46,11 +53,12 @@ def normalize_num(text):
 
 class TransactionData(object):
     """Simple class to hold information about a transaction"""
-    def __init__(self, date, amount, destination=None, message=None):
+    def __init__(self, date, amount, destination=None, message=None, ident=None):
         self.date = date
         self.amount = amount
         self.destination = destination
         self.message = message
+        self.ident = ident
 
 
 class BankImporter(object):
@@ -162,6 +170,69 @@ class UnicreditImport(BankImporter):
                                                          destination=tdest))
         return self.transactions
 
+class FioImport(BankImporter):
+    source = "fio"
+
+    def __init__(self, infile):
+        BankImporter.__init__(self, infile)
+        self.reader = codecs.getreader("cp1250")
+        self.inputreader = self.reader(self.infile)
+
+    def bank_import(self):
+        # For GPC format documentation see here:
+        # http://www.fio.cz/docs/cz/struktura-gpc.pdf
+        line_no = 1
+
+        # The first line contains info about account
+        line = self.inputreader.readline()
+        record_type = line[0:3]
+        if record_type != '074':
+            raise BadRecordTypeException(line_no)
+
+        # The following lines contain transactions
+        line = self.inputreader.readline()
+        while line:
+            line_no += 1
+            # Record type must be '075' (transaction)
+            record_type = line[0:3]
+            if record_type != '075':
+                raise BadRecordTypeException(line_no)
+
+            # Transaction type; 1 = debet, 2 = credit, 4 = storno of debet,
+            # 5 = storno of credit
+            ttype = int(line[60])
+
+            # Transaction amount
+            tamount = float(line[48:60]) / 100.0
+            if ttype in (1, 5):
+                tamount = -tamount
+
+            # Transaction date (DDMMYY)
+            d = int(line[122:124])
+            m = int(line[124:126])
+            y = 2000 + int(line[126:128])
+            tdate = date(y, m, d)
+
+            # Destination account
+            tbankcode = line[71:81].lstrip('0')[0:4]
+            tdestacc = line[19:35].lstrip('0')
+            tdest = tdestacc and ('%s/%s' % (tdestacc, tbankcode)) or None
+
+            # Message
+            tmessage = line[97:117].strip()
+
+            # Transaction identifier
+            tident = line[35:48]
+
+            # Append transaction to the list
+            self.transactions.append(TransactionData(tdate, tamount,
+                destination=tdest, message=tmessage, ident=tident))
+
+            # Read next line
+            line = self.inputreader.readline()
+
+        return self.transactions
+
 
 def write_qif(outfile, transactions):
     with open(outfile, 'w') as output:
@@ -174,6 +245,8 @@ def write_qif(outfile, transactions):
                       transaction.date.year)
             outputwriter.write(u"D%s/%s/%s\n" % (m, d, y))
             outputwriter.write(u"T%s\n" % transaction.amount)
+            if transaction.ident:
+                outputwriter.write(u"#%s\n" % transaction.ident)
             if transaction.message:
                 outputwriter.write(u"M%s\n" % transaction.message)
             if transaction.destination:
@@ -182,7 +255,7 @@ def write_qif(outfile, transactions):
 
 
 if __name__ == "__main__":
-    importers = [MBankImport, UnicreditImport]
+    importers = [MBankImport, UnicreditImport, FioImport]
     sources = []
     for importer in importers:
         sources.append(importer.source)
