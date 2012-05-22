@@ -100,7 +100,7 @@ class MBankImport(BankImporter):
                 trans_desc = normalize_field(row[3])
                 trans_target = normalize_field(row[4])
                 trans_acc = normalize_field(row[5])
-                tmessage = u"M%s %s %s %s" % (trans_type,
+                tmessage = u"%s %s %s %s" % (trans_type,
                                               trans_desc,
                                               trans_target,
                                               trans_acc)
