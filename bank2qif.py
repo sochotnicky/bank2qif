@@ -83,8 +83,10 @@ class MBankImport(BankImporter):
         items = False
         for row in unicode_csv_reader(self.inputreader.readlines(),
                                       delimiter=';'):
-            if not items and len(row) > 0 and \
-                    row[0] == u"#Datum uskutečnění transakce":
+            if not items and len(row) > 0 and ( \
+                    row[0] == u"#Datum uskutečnění transakce" or \
+                    row[0] == u"#Dátum uskutočnenia transakcie" \
+			):
                 items = True
                 continue
             if items:
