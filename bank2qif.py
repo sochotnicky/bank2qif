@@ -174,6 +174,38 @@ class UnicreditImport(BankImporter):
                                                          destination=tdest))
         return self.transactions
 
+class ZunoImport(BankImporter):
+    source = "zuno"
+
+    def bank_import(self):
+        items = False
+        for row in unicode_csv_reader(self.inputreader.readlines(),
+                                      delimiter=';'):
+            if not items and len(row) > 0 and row[0] == u"Dátum transakcie:":
+                items = True
+                continue
+            if items:
+                if len(row) <= 1:
+                    break
+
+                d, m, y = row[0].split('.')
+                tdate = date(int(y), int(m), int(d))
+                tamount = float(normalize_num(row[6]))
+
+                account_number = normalize_field(row[3])
+		bank_code = normalize_field(row[4])
+		tdest = None
+
+                if account_number != "":
+			tdest = "%s/%s" % (account_number, bank_code)
+			tdest = tdest.strip()
+                
+		tmessage = normalize_field(row[5])
+                self.transactions.append(TransactionData(tdate,
+                                                         tamount,
+                                                         message=tmessage,
+                                                         destination=tdest))
+        return self.transactions
 
 class FioImport(BankImporter):
     source = "fio"
@@ -260,7 +292,7 @@ def write_qif(outfile, transactions):
 
 
 if __name__ == "__main__":
-    importers = [MBankImport, UnicreditImport, FioImport]
+    importers = [MBankImport, UnicreditImport, FioImport, ZunoImport]
     sources = []
     for importer in importers:
         sources.append(importer.source)
