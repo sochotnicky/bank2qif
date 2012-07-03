@@ -1,8 +1,8 @@
 = Goals =
 
-This script can convert bank statements from mBank and Unicredit bank
-into QIF file format that can be processed by KMyMoney and some other
-financial software.
+This script can convert bank statements from several banks into QIF file
+format that can be processed by KMyMoney and some other financial
+software.
 
 If you can provide additional bank statement converters I'll gladly
 add them.
@@ -11,23 +11,16 @@ This was originally mbank2qif, but was renamed after addition of
 Unicredit converter. See https://github.com/sochotnicky/mbank2qif for
 history
 
+= Supported Banks =
+ * mBank (CZ)
+ * Unicredit (CZ)
+ * Fio (CZ)
+
 = Usage =
+For help use:
 $ ./bank2qif.py -h
-usage: bank2qif.py [-h] [-i INPUT] [-o OUTPUT] [-t TYPE]
 
-Bank statement to QIF file converter
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -i INPUT, --input INPUT
-                        input file to process [default:stdin]
-  -o OUTPUT, --output OUTPUT
-                        output file [default:stdout]
-  -t TYPE, --type TYPE  Type of input file [default:mbank] Possible values:
-                        mbank, unicredit
-
-
-The way it's designed (using stdin/out) it can be used as KMyMoney
+The way bank2qif is designed (using stdin/out) it can be used as KMyMoney
 import filter.
 
 = License =
