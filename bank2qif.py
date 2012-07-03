@@ -22,6 +22,7 @@ import argparse
 import re
 from datetime import date
 
+
 class BadRecordTypeException(Exception):
     def __init__(self, line_no):
         self._line_no = line_no
@@ -43,9 +44,11 @@ def utf_8_encoder(unicode_csv_data):
     for line in unicode_csv_data:
         yield line.encode('utf-8')
 
+
 def normalize_field(text):
     ret = re.sub(BankImporter.multispace_re, " ", text)
     return ret.replace('"', '').replace("'", "").strip()
+
 
 def normalize_num(text):
     return text.replace(',', '.').replace(' ', '').strip()
@@ -53,7 +56,8 @@ def normalize_num(text):
 
 class TransactionData(object):
     """Simple class to hold information about a transaction"""
-    def __init__(self, date, amount, destination=None, message=None, ident=None):
+    def __init__(self, date, amount, destination=None, message=None,
+            ident=None):
         self.date = date
         self.amount = amount
         self.destination = destination
@@ -94,7 +98,7 @@ class MBankImport(BankImporter):
             if not items and len(row) > 0 and ( \
                     row[0] == u"#Datum uskutečnění transakce" or \
                     row[0] == u"#Dátum uskutočnenia transakcie" \
-			):
+                    ):
                 items = True
                 continue
             if items:
@@ -152,7 +156,7 @@ class UnicreditImport(BankImporter):
                         tdest == None:
                     # when paid by card the description of place is in
                     # last of "transaction details"
-                    for i in reversed(range(13,19)):
+                    for i in reversed(range(13, 19)):
                         if normalize_field(row[i]) != "":
                             tdest = "%s" % (normalize_field(row[i]))
                             break
@@ -169,6 +173,7 @@ class UnicreditImport(BankImporter):
                                                          message=tmessage,
                                                          destination=tdest))
         return self.transactions
+
 
 class FioImport(BankImporter):
     source = "fio"
@@ -260,7 +265,8 @@ if __name__ == "__main__":
     for importer in importers:
         sources.append(importer.source)
 
-    parser = argparse.ArgumentParser(description='Bank statement to QIF file converter')
+    parser = argparse.ArgumentParser(description=
+            'Bank statement to QIF file converter')
     parser.add_argument('-i', '--input',
                         help='input file to process [default:stdin]',
                         default='/dev/stdin')
