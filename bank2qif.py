@@ -207,6 +207,7 @@ class ZunoImport(BankImporter):
                                                          destination=tdest))
         return self.transactions
 
+
 class FioImport(BankImporter):
     source = "fio"
 
@@ -271,6 +272,52 @@ class FioImport(BankImporter):
         return self.transactions
 
 
+class SlSpImport(BankImporter):
+    source = "slsp"
+
+    def __init__(self, infile):
+        BankImporter.__init__(self, infile)
+        self.reader = codecs.getreader("cp1250")
+        self.inputreader = self.reader(self.infile)
+
+    def bank_import(self):
+        for row in unicode_csv_reader(self.inputreader.readlines(),
+                                      delimiter=';'):
+            if len(row) <= 1:
+                break
+
+            d, m, y = row[0].split('.')
+            tdate = date(int(y), int(m), int(d))
+            tamount = float(normalize_num(row[7]))
+
+            account_number = normalize_field(row[4])
+            prepend_number = normalize_field(row[3])
+            bank_code = normalize_field(row[5])
+            tdest = None
+
+            if account_number != "":
+                    tdest = "%s/%s" % (account_number, bank_code)
+                    tdest = tdest.strip()
+                    if prepend_number != "":
+                        tdest = "%s-%s" % (prepend_number, tdest)
+                        tdest = tdest.strip()
+
+            account_name = normalize_field(row[6])
+            name = normalize_field(row[11])
+            information = normalize_field(row[16])
+            extend_information = normalize_field(row[18]) + " " + normalize_field(row[22])
+
+            tmessage = "%s %s %s" % (name, information, extend_information)
+            tmessage = tmessage.strip()
+            if account_name != "":
+                tmessage+= ", " + account_name
+
+            self.transactions.append(TransactionData(tdate,
+                                                     tamount,
+                                                     message=tmessage,
+                                                     destination=tdest))
+        return self.transactions
+
 def write_qif(outfile, transactions):
     with open(outfile, 'w') as output:
         writer = codecs.getwriter("utf-8")
@@ -292,7 +339,7 @@ def write_qif(outfile, transactions):
 
 
 if __name__ == "__main__":
-    importers = [MBankImport, UnicreditImport, FioImport, ZunoImport]
+    importers = [MBankImport, UnicreditImport, FioImport, ZunoImport, SlSpImport]
     sources = []
     for importer in importers:
         sources.append(importer.source)
