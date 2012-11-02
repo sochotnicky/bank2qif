@@ -12,9 +12,11 @@ Unicredit converter. See https://github.com/sochotnicky/mbank2qif for
 history
 
 = Supported Banks =
- * mBank (CZ)
+ * mBank (CZ,SK)
  * Unicredit (CZ)
  * Fio (CZ)
+ * Zuno (SK)
+ * Slovenska Sporitelna (SK)
 
 = Usage =
 For help use:
