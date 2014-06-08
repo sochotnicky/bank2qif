@@ -87,7 +87,7 @@ class MBankImport(BankImporter):
     source = "mbank"
 
     def __init__(self, infile):
-        BankImporter.__init__(self, infile)
+        super(MBankImport, self).__init__(infile)
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
@@ -213,7 +213,7 @@ class FioImport(BankImporter):
     source = "fio"
 
     def __init__(self, infile):
-        BankImporter.__init__(self, infile)
+        super(FioImport, self).__init__(infile)
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
@@ -277,7 +277,7 @@ class SlSpImport(BankImporter):
     source = "slsp"
 
     def __init__(self, infile):
-        BankImporter.__init__(self, infile)
+        super(SlSpImport, self).__init__(infile)
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
