@@ -95,9 +95,9 @@ class MBankImport(BankImporter):
         items = False
         for row in unicode_csv_reader(self.inputreader.readlines(),
                                       delimiter=';'):
-            if not items and len(row) > 0 and ( \
-                    row[0] == u"#Datum uskutečnění transakce" or \
-                    row[0] == u"#Dátum uskutočnenia transakcie" \
+            if not items and len(row) > 0 and (
+                    row[0] == u"#Datum uskutečnění transakce" or
+                    row[0] == u"#Dátum uskutočnenia transakcie"
                     ):
                 items = True
                 continue
@@ -153,7 +153,7 @@ class UnicreditImport(BankImporter):
 
                 t_type = row[13].strip()
                 if t_type == u"PLATBA PLATEBNÍ KARTOU" and \
-                        tdest == None:
+                        tdest is None:
                     # when paid by card the description of place is in
                     # last of "transaction details"
                     for i in reversed(range(13, 19)):
@@ -174,6 +174,7 @@ class UnicreditImport(BankImporter):
                                                          destination=tdest))
         return self.transactions
 
+
 class ZunoImport(BankImporter):
     source = "zuno"
 
@@ -193,14 +194,14 @@ class ZunoImport(BankImporter):
                 tamount = float(normalize_num(row[6]))
 
                 account_number = normalize_field(row[3])
-		bank_code = normalize_field(row[4])
-		tdest = None
+                bank_code = normalize_field(row[4])
+                tdest = None
 
                 if account_number != "":
-			tdest = "%s/%s" % (account_number, bank_code)
-			tdest = tdest.strip()
-                
-		tmessage = normalize_field(row[5])
+                    tdest = "%s/%s" % (account_number, bank_code)
+                    tdest = tdest.strip()
+
+                tmessage = normalize_field(row[5])
                 self.transactions.append(TransactionData(tdate,
                                                          tamount,
                                                          message=tmessage,
@@ -305,18 +306,20 @@ class SlSpImport(BankImporter):
             account_name = normalize_field(row[6])
             name = normalize_field(row[11])
             information = normalize_field(row[16])
-            extend_information = normalize_field(row[18]) + " " + normalize_field(row[22])
+            extend_information = normalize_field(row[18]) + " " + \
+                normalize_field(row[22])
 
             tmessage = "%s %s %s" % (name, information, extend_information)
             tmessage = tmessage.strip()
             if account_name != "":
-                tmessage+= ", " + account_name
+                tmessage += ", " + account_name
 
             self.transactions.append(TransactionData(tdate,
                                                      tamount,
                                                      message=tmessage,
                                                      destination=tdest))
         return self.transactions
+
 
 def write_qif(outfile, transactions):
     with open(outfile, 'w') as output:
@@ -344,8 +347,8 @@ if __name__ == "__main__":
     for importer in importers:
         sources.append(importer.source)
 
-    parser = argparse.ArgumentParser(description=
-            'Bank statement to QIF file converter')
+    parser = argparse.ArgumentParser(
+        description='Bank statement to QIF file converter')
     parser.add_argument('-i', '--input',
                         help='input file to process [default:stdin]',
                         default='/dev/stdin')
