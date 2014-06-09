@@ -54,6 +54,17 @@ def normalize_num(text):
     return text.replace(',', '.').replace(' ', '').strip()
 
 
+IMPORTERS = {}
+
+
+def register_importer(source):
+    def f(cls):
+        assert source not in IMPORTERS, "More importers for the source?"
+        IMPORTERS[source] = cls
+        return cls
+    return f
+
+
 class TransactionData(object):
     """Simple class to hold information about a transaction"""
     def __init__(self, date, amount, destination=None, message=None,
@@ -83,11 +94,10 @@ class BankImporter(object):
         pass
 
 
+@register_importer("mbank")
 class MBankImport(BankImporter):
-    source = "mbank"
-
     def __init__(self, infile):
-        BankImporter.__init__(self, infile)
+        super(MBankImport, self).__init__(infile)
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
@@ -95,9 +105,9 @@ class MBankImport(BankImporter):
         items = False
         for row in unicode_csv_reader(self.inputreader.readlines(),
                                       delimiter=';'):
-            if not items and len(row) > 0 and ( \
-                    row[0] == u"#Datum uskutečnění transakce" or \
-                    row[0] == u"#Dátum uskutočnenia transakcie" \
+            if not items and len(row) > 0 and (
+                    row[0] == u"#Datum uskutečnění transakce" or
+                    row[0] == u"#Dátum uskutočnenia transakcie"
                     ):
                 items = True
                 continue
@@ -122,9 +132,8 @@ class MBankImport(BankImporter):
         return self.transactions
 
 
+@register_importer("unicredit")
 class UnicreditImport(BankImporter):
-    source = "unicredit"
-
     def bank_import(self):
         items = False
         for row in unicode_csv_reader(self.inputreader.readlines(),
@@ -153,7 +162,7 @@ class UnicreditImport(BankImporter):
 
                 t_type = row[13].strip()
                 if t_type == u"PLATBA PLATEBNÍ KARTOU" and \
-                        tdest == None:
+                        tdest is None:
                     # when paid by card the description of place is in
                     # last of "transaction details"
                     for i in reversed(range(13, 19)):
@@ -174,9 +183,9 @@ class UnicreditImport(BankImporter):
                                                          destination=tdest))
         return self.transactions
 
-class ZunoImport(BankImporter):
-    source = "zuno"
 
+@register_importer("zuno")
+class ZunoImport(BankImporter):
     def bank_import(self):
         items = False
         for row in unicode_csv_reader(self.inputreader.readlines(),
@@ -193,14 +202,14 @@ class ZunoImport(BankImporter):
                 tamount = float(normalize_num(row[6]))
 
                 account_number = normalize_field(row[3])
-		bank_code = normalize_field(row[4])
-		tdest = None
+                bank_code = normalize_field(row[4])
+                tdest = None
 
                 if account_number != "":
-			tdest = "%s/%s" % (account_number, bank_code)
-			tdest = tdest.strip()
-                
-		tmessage = normalize_field(row[5])
+                    tdest = "%s/%s" % (account_number, bank_code)
+                    tdest = tdest.strip()
+
+                tmessage = normalize_field(row[5])
                 self.transactions.append(TransactionData(tdate,
                                                          tamount,
                                                          message=tmessage,
@@ -208,11 +217,10 @@ class ZunoImport(BankImporter):
         return self.transactions
 
 
+@register_importer("fio")
 class FioImport(BankImporter):
-    source = "fio"
-
     def __init__(self, infile):
-        BankImporter.__init__(self, infile)
+        super(FioImport, self).__init__(infile)
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
@@ -272,11 +280,10 @@ class FioImport(BankImporter):
         return self.transactions
 
 
+@register_importer("slsp")
 class SlSpImport(BankImporter):
-    source = "slsp"
-
     def __init__(self, infile):
-        BankImporter.__init__(self, infile)
+        super(SlSpImport, self).__init__(infile)
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
@@ -305,18 +312,20 @@ class SlSpImport(BankImporter):
             account_name = normalize_field(row[6])
             name = normalize_field(row[11])
             information = normalize_field(row[16])
-            extend_information = normalize_field(row[18]) + " " + normalize_field(row[22])
+            extend_information = normalize_field(row[18]) + " " + \
+                normalize_field(row[22])
 
             tmessage = "%s %s %s" % (name, information, extend_information)
             tmessage = tmessage.strip()
             if account_name != "":
-                tmessage+= ", " + account_name
+                tmessage += ", " + account_name
 
             self.transactions.append(TransactionData(tdate,
                                                      tamount,
                                                      message=tmessage,
                                                      destination=tdest))
         return self.transactions
+
 
 def write_qif(outfile, transactions):
     with open(outfile, 'w') as output:
@@ -339,13 +348,10 @@ def write_qif(outfile, transactions):
 
 
 if __name__ == "__main__":
-    importers = [MBankImport, UnicreditImport, FioImport, ZunoImport, SlSpImport]
-    sources = []
-    for importer in importers:
-        sources.append(importer.source)
+    sources = sorted(IMPORTERS.keys())
 
-    parser = argparse.ArgumentParser(description=
-            'Bank statement to QIF file converter')
+    parser = argparse.ArgumentParser(
+        description='Bank statement to QIF file converter')
     parser.add_argument('-i', '--input',
                         help='input file to process [default:stdin]',
                         default='/dev/stdin')
@@ -353,14 +359,12 @@ if __name__ == "__main__":
                         help='output file [default:stdout]',
                         default='/dev/stdout')
     parser.add_argument('-t', '--type',
-                        help='Type of input file [default:mbank]'
-                             ' Possible values: %s' % ', '.join(sources),
+                        help='Type of input file [default:mbank]',
+                        choices=sources,
                         default='mbank')
     args = parser.parse_args()
-    transactions = []
-    for importer in importers:
-        if args.type == importer.source:
-            inst = importer(args.input)
-            transactions = inst.bank_import()
+    importer = IMPORTERS.get(args.type)
+    inst = importer(args.input)
+    transactions = inst.bank_import()
 
     write_qif(args.output, transactions)
