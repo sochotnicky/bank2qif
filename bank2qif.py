@@ -109,10 +109,9 @@ class MBankImport(BankImporter):
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
-    def bank_import(self):
+    def __iter__(self):
         items = False
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if not items and len(row) > 0 and (
                     row[0] == u"#Datum uskutečnění transakce" or
                     row[0] == u"#Dátum uskutočnenia transakcie"
@@ -134,10 +133,7 @@ class MBankImport(BankImporter):
                                               trans_desc,
                                               trans_target,
                                               trans_acc)
-                self.transactions.append(TransactionData(tdate,
-                                                         tamount,
-                                                         message=tmessage))
-        return self.transactions
+                yield TransactionData(tdate, tamount, message=tmessage)
 
 
 @register_importer("unicredit")
