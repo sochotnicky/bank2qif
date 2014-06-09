@@ -77,7 +77,12 @@ class TransactionData(object):
 
 
 class BankImporter(object):
-    """Base class for statement import"""
+    """Base class for statement import
+
+    To work properly, you need to implement one of
+
+      * __iter__
+      * bank_import"""
 
     multispace_re = re.compile('\s+')
 
@@ -91,7 +96,10 @@ class BankImporter(object):
         """Run import from file and return list of transactions
 
         bank_import() -> [TransactionData, ...]"""
-        pass
+        return list(self)
+
+    def __iter__(self):
+        return iter(self.bank_import())
 
 
 @register_importer("mbank")
@@ -363,8 +371,6 @@ if __name__ == "__main__":
                         choices=sources,
                         default='mbank')
     args = parser.parse_args()
-    importer = IMPORTERS.get(args.type)
-    inst = importer(args.input)
-    transactions = inst.bank_import()
-
-    write_qif(args.output, transactions)
+    importer_class = IMPORTERS.get(args.type)
+    importer = importer_class(args.input)
+    write_qif(args.output, importer)
