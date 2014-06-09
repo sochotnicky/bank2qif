@@ -228,7 +228,7 @@ class FioImport(BankImporter):
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
-    def bank_import(self):
+    def __iter__(self):
         # For GPC format documentation see here:
         # http://www.fio.cz/docs/cz/struktura-gpc.pdf
         line_no = 1
@@ -240,8 +240,7 @@ class FioImport(BankImporter):
             raise BadRecordTypeException(line_no)
 
         # The following lines contain transactions
-        line = self.inputreader.readline()
-        while line:
+        for line in self.inputreader:
             line_no += 1
             # Record type must be '075' (transaction)
             record_type = line[0:3]
@@ -275,13 +274,8 @@ class FioImport(BankImporter):
             tident = line[35:48]
 
             # Append transaction to the list
-            self.transactions.append(TransactionData(tdate, tamount,
-                destination=tdest, message=tmessage, ident=tident))
-
-            # Read next line
-            line = self.inputreader.readline()
-
-        return self.transactions
+            yield TransactionData(tdate, tamount, destination=tdest,
+                                  message=tmessage, ident=tident)
 
 
 @register_importer("slsp")
