@@ -77,7 +77,11 @@ class TransactionData(object):
 
 
 class BankImporter(object):
-    """Base class for statement import"""
+    """Base class for statement import
+
+    To work properly, you need to implement __iter__.
+    Maybe the easyiest way is to call yield ever time
+    you have new TransactionData."""
 
     multispace_re = re.compile('\s+')
 
@@ -85,12 +89,8 @@ class BankImporter(object):
         self.infile = open(infile, 'r')
         self.reader = codecs.getreader("utf-8")
         self.inputreader = self.reader(self.infile)
-        self.transactions = []
 
-    def bank_import(self):
-        """Run import from file and return list of transactions
-
-        bank_import() -> [TransactionData, ...]"""
+    def __iter__(self):
         pass
 
 
@@ -101,10 +101,9 @@ class MBankImport(BankImporter):
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
-    def bank_import(self):
+    def __iter__(self):
         items = False
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if not items and len(row) > 0 and (
                     row[0] == u"#Datum uskutečnění transakce" or
                     row[0] == u"#Dátum uskutočnenia transakcie"
@@ -126,18 +125,14 @@ class MBankImport(BankImporter):
                                               trans_desc,
                                               trans_target,
                                               trans_acc)
-                self.transactions.append(TransactionData(tdate,
-                                                         tamount,
-                                                         message=tmessage))
-        return self.transactions
+                yield TransactionData(tdate, tamount, message=tmessage)
 
 
 @register_importer("unicredit")
 class UnicreditImport(BankImporter):
-    def bank_import(self):
+    def __iter__(self):
         items = False
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if not items and len(row) > 0 and row[0] == u"Účet":
                 items = True
                 continue
@@ -177,19 +172,15 @@ class UnicreditImport(BankImporter):
                                                   row[17],
                                                   row[18])
                 tmessage = normalize_field(tmessage)
-                self.transactions.append(TransactionData(tdate,
-                                                         tamount,
-                                                         message=tmessage,
-                                                         destination=tdest))
-        return self.transactions
+                yield TransactionData(tdate, tamount, message=tmessage,
+                                      destination=tdest)
 
 
 @register_importer("zuno")
 class ZunoImport(BankImporter):
-    def bank_import(self):
+    def __iter__(self):
         items = False
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if not items and len(row) > 0 and row[0] == u"Dátum transakcie:":
                 items = True
                 continue
@@ -210,11 +201,8 @@ class ZunoImport(BankImporter):
                     tdest = tdest.strip()
 
                 tmessage = normalize_field(row[5])
-                self.transactions.append(TransactionData(tdate,
-                                                         tamount,
-                                                         message=tmessage,
-                                                         destination=tdest))
-        return self.transactions
+                yield TransactionData(tdate, tamount, message=tmessage,
+                                      destination=tdest)
 
 
 @register_importer("fio")
@@ -224,7 +212,7 @@ class FioImport(BankImporter):
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
-    def bank_import(self):
+    def __iter__(self):
         # For GPC format documentation see here:
         # http://www.fio.cz/docs/cz/struktura-gpc.pdf
         line_no = 1
@@ -236,8 +224,7 @@ class FioImport(BankImporter):
             raise BadRecordTypeException(line_no)
 
         # The following lines contain transactions
-        line = self.inputreader.readline()
-        while line:
+        for line in self.inputreader:
             line_no += 1
             # Record type must be '075' (transaction)
             record_type = line[0:3]
@@ -271,13 +258,8 @@ class FioImport(BankImporter):
             tident = line[35:48]
 
             # Append transaction to the list
-            self.transactions.append(TransactionData(tdate, tamount,
-                destination=tdest, message=tmessage, ident=tident))
-
-            # Read next line
-            line = self.inputreader.readline()
-
-        return self.transactions
+            yield TransactionData(tdate, tamount, destination=tdest,
+                                  message=tmessage, ident=tident)
 
 
 @register_importer("slsp")
@@ -287,9 +269,8 @@ class SlSpImport(BankImporter):
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
-    def bank_import(self):
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+    def __iter__(self):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if len(row) <= 1:
                 break
 
@@ -320,11 +301,8 @@ class SlSpImport(BankImporter):
             if account_name != "":
                 tmessage += ", " + account_name
 
-            self.transactions.append(TransactionData(tdate,
-                                                     tamount,
-                                                     message=tmessage,
-                                                     destination=tdest))
-        return self.transactions
+            yield TransactionData(tdate, tamount, message=tmessage,
+                                  destination=tdest)
 
 
 def write_qif(outfile, transactions):
@@ -363,8 +341,6 @@ if __name__ == "__main__":
                         choices=sources,
                         default='mbank')
     args = parser.parse_args()
-    importer = IMPORTERS.get(args.type)
-    inst = importer(args.input)
-    transactions = inst.bank_import()
-
-    write_qif(args.output, transactions)
+    importer_class = IMPORTERS.get(args.type)
+    importer = importer_class(args.input)
+    write_qif(args.output, importer)
