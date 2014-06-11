@@ -84,11 +84,11 @@ class BankImporter(object):
     you have new TransactionData."""
 
     multispace_re = re.compile('\s+')
+    input_encoding = "utf-8"
 
     def __init__(self, infile):
-        self.infile = open(infile, 'r')
-        self.reader = codecs.getreader("utf-8")
-        self.inputreader = self.reader(self.infile)
+        reader = codecs.getreader(self.input_encoding)
+        self.inputreader = reader(open(infile, 'r'))
 
     def __iter__(self):
         pass
@@ -96,10 +96,7 @@ class BankImporter(object):
 
 @register_importer("mbank")
 class MBankImport(BankImporter):
-    def __init__(self, infile):
-        super(MBankImport, self).__init__(infile)
-        self.reader = codecs.getreader("cp1250")
-        self.inputreader = self.reader(self.infile)
+    input_encoding = "cp1250"
 
     def __iter__(self):
         items = False
@@ -207,10 +204,7 @@ class ZunoImport(BankImporter):
 
 @register_importer("fio")
 class FioImport(BankImporter):
-    def __init__(self, infile):
-        super(FioImport, self).__init__(infile)
-        self.reader = codecs.getreader("cp1250")
-        self.inputreader = self.reader(self.infile)
+    input_encoding = "cp1250"
 
     def __iter__(self):
         # For GPC format documentation see here:
@@ -264,10 +258,7 @@ class FioImport(BankImporter):
 
 @register_importer("slsp")
 class SlSpImport(BankImporter):
-    def __init__(self, infile):
-        super(SlSpImport, self).__init__(infile)
-        self.reader = codecs.getreader("cp1250")
-        self.inputreader = self.reader(self.infile)
+    input_encoding = "cp1250"
 
     def __iter__(self):
         for row in unicode_csv_reader(self.inputreader, delimiter=';'):
