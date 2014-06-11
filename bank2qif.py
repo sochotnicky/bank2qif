@@ -79,10 +79,9 @@ class TransactionData(object):
 class BankImporter(object):
     """Base class for statement import
 
-    To work properly, you need to implement one of
-
-      * __iter__
-      * bank_import"""
+    To work properly, you need to implement __iter__.
+    Maybe the easyiest way is to call yield ever time
+    you have new TransactionData."""
 
     multispace_re = re.compile('\s+')
 
@@ -90,16 +89,9 @@ class BankImporter(object):
         self.infile = open(infile, 'r')
         self.reader = codecs.getreader("utf-8")
         self.inputreader = self.reader(self.infile)
-        self.transactions = []
-
-    def bank_import(self):
-        """Run import from file and return list of transactions
-
-        bank_import() -> [TransactionData, ...]"""
-        return list(self)
 
     def __iter__(self):
-        return iter(self.bank_import())
+        pass
 
 
 @register_importer("mbank")
