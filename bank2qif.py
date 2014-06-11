@@ -277,9 +277,8 @@ class SlSpImport(BankImporter):
         self.reader = codecs.getreader("cp1250")
         self.inputreader = self.reader(self.infile)
 
-    def bank_import(self):
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+    def __iter__(self):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if len(row) <= 1:
                 break
 
@@ -310,11 +309,8 @@ class SlSpImport(BankImporter):
             if account_name != "":
                 tmessage += ", " + account_name
 
-            self.transactions.append(TransactionData(tdate,
-                                                     tamount,
-                                                     message=tmessage,
-                                                     destination=tdest))
-        return self.transactions
+            yield TransactionData(tdate, tamount, message=tmessage,
+                                  destination=tdest)
 
 
 def write_qif(outfile, transactions):
