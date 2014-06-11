@@ -138,10 +138,9 @@ class MBankImport(BankImporter):
 
 @register_importer("unicredit")
 class UnicreditImport(BankImporter):
-    def bank_import(self):
+    def __iter__(self):
         items = False
-        for row in unicode_csv_reader(self.inputreader.readlines(),
-                                      delimiter=';'):
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
             if not items and len(row) > 0 and row[0] == u"Účet":
                 items = True
                 continue
@@ -181,11 +180,8 @@ class UnicreditImport(BankImporter):
                                                   row[17],
                                                   row[18])
                 tmessage = normalize_field(tmessage)
-                self.transactions.append(TransactionData(tdate,
-                                                         tamount,
-                                                         message=tmessage,
-                                                         destination=tdest))
-        return self.transactions
+                yield TransactionData(tdate, tamount, message=tmessage,
+                                      destination=tdest)
 
 
 @register_importer("zuno")
