@@ -20,7 +20,8 @@ import codecs
 import csv
 import argparse
 import re
-from datetime import date
+from datetime import date, datetime
+from xml.etree import ElementTree
 
 
 class BadRecordTypeException(Exception):
@@ -123,6 +124,36 @@ class MBankImport(BankImporter):
                                               trans_target,
                                               trans_acc)
                 yield TransactionData(tdate, tamount, message=tmessage)
+
+
+def plain_content(element):
+    output = []
+    for child in element:
+        output.append(child.text or '')
+        output.append(plain_content(child))
+        output.append(child.tail or '')
+    return ' '.join(output)
+
+
+@register_importer("mbank-html")
+class MBankHTMLImport(BankImporter):
+    """
+    Convert mBank HTML statements send by e-mail.
+    """
+    input_encoding = 'iso-8859-2'
+
+    def __iter__(self):
+        root = ElementTree.fromstringlist(codecs.iterencode(self.inputreader, 'utf'))
+        table = root.findall('.//table')[5]
+        for row in table[2:-1]:
+            date_str = row.find('.//td[3].nobr').text
+            tdate = datetime.strptime(date_str, '%d.%m.%Y')
+            amount_str = row.find('.//td[5].nobr').text
+            amount_str = amount_str.replace('.', '')
+            tamount = float(normalize_num(amount_str))
+            desc = plain_content(row.find('.//td[4]'))
+            tmessage = normalize_field(desc)
+            yield TransactionData(tdate, tamount, message=tmessage)
 
 
 @register_importer("unicredit")
