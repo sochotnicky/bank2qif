@@ -279,6 +279,73 @@ class FioImport(BankImporter):
                                   message=tmessage, ident=tident)
 
 
+@register_importer("rb")
+class RaiffeisenBankImport(BankImporter):
+    """
+    Convert RaiffeisenBank statements sent by email (plain text table).
+    """
+    input_encoding = "cp1250"
+    # Delimiter of the headers
+    header_delimiter = '=' * 86
+    # Delimiter between the rows
+    row_delimiter = '-' * 86
+    # Period line pattern
+    period_re = re.compile(ur'Za období \d+\.\d+\.(?P<year>\d+)', re.UNICODE)
+
+    def __iter__(self):
+        year = None
+        delim_counter = 5
+        while delim_counter:
+            row = next(self.inputreader)
+            if row.strip() == self.header_delimiter:
+                delim_counter -= 1
+            match = self.period_re.match(row)
+            if match:
+                year = match.group('year')
+
+        if not year:
+            raise ValueError('Year not found.')
+
+        transaction = TransactionData()
+        row_count = 0
+        for row in self.inputreader:
+            if row.strip() == '':
+                continue
+
+            row_count += 1
+            if row.strip() == self.row_delimiter:
+                # We found delimiter, push the record and start a new one
+                yield transaction
+                transaction = TransactionData()
+                row_count = 0
+                continue
+            if row_count == 1:
+                transaction.date = datetime.strptime('%s%s' % (row[5:11], year), '%d.%m.%Y')
+                message = row[11:33].strip()
+                if message:
+                    transaction.message = message
+                # Main item
+                transaction.add_split(SplitItem(normalize_num(row[55:76]), message))
+                # Transaction fee
+                fee = normalize_num(row[77:86])
+                if fee:
+                    transaction.add_split(SplitItem(fee, 'Poplatek'))
+            elif row_count == 2:
+                destination = row[11:33].strip()
+                if destination:
+                    transaction.destination = destination
+            elif row_count == 3:
+                # Message fee
+                fee = normalize_num(row[77:86])
+                if fee:
+                    transaction.add_split(SplitItem(fee, 'Poplatek'))
+            else:
+                # Additional comments
+                message = transaction.message or ''
+                message += row.strip()
+                transaction.message = message
+
+
 @register_importer("slsp")
 class SlSpImport(BankImporter):
     input_encoding = "cp1250"
