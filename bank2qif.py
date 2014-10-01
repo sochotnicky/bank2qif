@@ -51,7 +51,11 @@ def normalize_field(text):
 
 
 def normalize_num(text):
-    return text.replace(',', '.').replace(' ', '').strip()
+    text = text.replace(',', '.').replace(' ', '').strip()
+    if not text:
+        return None
+
+    return float(text)
 
 
 IMPORTERS = {}
@@ -65,15 +69,34 @@ def register_importer(source):
     return f
 
 
+class SplitItem(object):
+    def __init__(self, amount, message=None):
+        assert isinstance(amount, float)
+        self.amount = amount  # '$' field
+        self.message = message  # 'E' field
+
+
 class TransactionData(object):
     """Simple class to hold information about a transaction"""
-    def __init__(self, date, amount, destination=None, message=None,
+    def __init__(self, date=None, amount=None, destination=None, message=None,
             ident=None):
-        self.date = date
-        self.amount = amount
-        self.destination = destination
-        self.message = message
+        self.date = date  # 'D' field
+        self.amount = amount  # 'T' field
+        self.destination = destination  # 'P' field
+        self.message = message  # 'M' field
         self.ident = ident
+        self.splits = []
+
+    def add_split(self, split):
+        assert isinstance(split, SplitItem)
+        self.splits.append(split)
+
+    def get_amount(self):
+        """Returns total amount of transaction"""
+        if self.splits:
+            return sum(s.amount for s in self.splits)
+        else:
+            return self.amount
 
 
 class BankImporter(object):
@@ -306,13 +329,18 @@ def write_qif(outfile, transactions):
                       transaction.date.month,
                       transaction.date.year)
             outputwriter.write(u"D%s/%s/%s\n" % (m, d, y))
-            outputwriter.write(u"T%s\n" % transaction.amount)
+            outputwriter.write(u"T%.2f\n" % transaction.get_amount())
             if transaction.ident:
                 outputwriter.write(u"#%s\n" % transaction.ident)
             if transaction.message:
                 outputwriter.write(u"M%s\n" % transaction.message)
             if transaction.destination:
                 outputwriter.write(u"P%s\n" % transaction.destination)
+            if len(transaction.splits) > 1:
+                for split in transaction.splits:
+                    if split.message:
+                        outputwriter.write(u"E%s\n" % split.message)
+                    outputwriter.write(u"$%.2f\n" % split.amount)
             outputwriter.write(u'^\n')
 
 
