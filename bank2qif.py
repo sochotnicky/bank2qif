@@ -125,6 +125,36 @@ class MBankImport(BankImporter):
                 yield TransactionData(tdate, tamount, message=tmessage)
 
 
+@register_importer("kb")
+class KBImport(BankImporter):
+    input_encoding = "cp1250"
+
+    def __iter__(self):
+        items = False
+        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
+            if not items and len(row) > 0 and (row[0] == u"Datum splatnosti"):
+                items = True
+                continue
+            if items:
+                if len(row) == 0:
+                    break
+                d, m, y = row[0].split('.')
+                tdate = date(int(y), int(m), int(d))
+                tamount = float(normalize_num(row[4]))
+
+                trans_type = normalize_field(row[9]) # also 3
+                trans_desc = normalize_field(row[10])
+                trans_target = normalize_field(row[12])
+                trans_acc = normalize_field(row[3])
+                tmessage = u"%s %s %s %s" % (trans_type,
+                                              trans_desc,
+                                              trans_target,
+                                              trans_acc)
+                yield TransactionData(tdate, tamount, message=tmessage)
+
+
+
+
 @register_importer("unicredit")
 class UnicreditImport(BankImporter):
     def __iter__(self):
