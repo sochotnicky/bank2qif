@@ -118,10 +118,21 @@ class MBankImport(BankImporter):
                 trans_desc = normalize_field(row[3])
                 trans_target = normalize_field(row[4])
                 trans_acc = normalize_field(row[5])
+
+                # Extract date and the actual description from the "description" field
+                matches = re.match(r"(.+)\s+DATUM PROVEDEN. TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", trans_desc)
+                if matches:
+                    trans_desc = matches.group(1)
+                    tdate = date(int(matches.group(2)), int(matches.group(3)), int(matches.group(4)))
+
                 tmessage = u"%s %s %s %s" % (trans_type,
                                               trans_desc,
                                               trans_target,
                                               trans_acc)
+                
+                # print tmessage
+                # print row
+
                 yield TransactionData(tdate, tamount, message=tmessage)
 
 
@@ -142,14 +153,18 @@ class KBImport(BankImporter):
                 tdate = date(int(y), int(m), int(d))
                 tamount = float(normalize_num(row[4]))
 
-                trans_type = normalize_field(row[9]) # also 3
-                trans_desc = normalize_field(row[10])
-                trans_target = normalize_field(row[12])
-                trans_acc = normalize_field(row[3])
+                #print ' :: '.join(row)
+                trans_type = normalize_field(row[12]) # also 3
+                trans_desc = normalize_field(row[15])
+                trans_target = normalize_field(row[16])
+                #trans_acc = normalize_field(row[3])
+                trans_acc = ''
                 tmessage = u"%s %s %s %s" % (trans_type,
                                               trans_desc,
                                               trans_target,
                                               trans_acc)
+                #print tmessage
+                #return
                 yield TransactionData(tdate, tamount, message=tmessage)
 
 
