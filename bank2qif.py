@@ -20,7 +20,8 @@ import codecs
 import csv
 import argparse
 import re
-from datetime import date
+from datetime import date, datetime
+from xml.etree import ElementTree
 
 
 class BadRecordTypeException(Exception):
@@ -51,7 +52,11 @@ def normalize_field(text):
 
 
 def normalize_num(text):
-    return text.replace(',', '.').replace(' ', '').strip()
+    text = text.replace(',', '.').replace(' ', '').strip()
+    if not text:
+        return None
+
+    return float(text)
 
 
 IMPORTERS = {}
@@ -65,15 +70,34 @@ def register_importer(source):
     return f
 
 
+class SplitItem(object):
+    def __init__(self, amount, message=None):
+        assert isinstance(amount, float)
+        self.amount = amount  # '$' field
+        self.message = message  # 'E' field
+
+
 class TransactionData(object):
     """Simple class to hold information about a transaction"""
-    def __init__(self, date, amount, destination=None, message=None,
+    def __init__(self, date=None, amount=None, destination=None, message=None,
             ident=None):
-        self.date = date
-        self.amount = amount
-        self.destination = destination
-        self.message = message
+        self.date = date  # 'D' field
+        self.amount = amount  # 'T' field
+        self.destination = destination  # 'P' field
+        self.message = message  # 'M' field
         self.ident = ident
+        self.splits = []
+
+    def add_split(self, split):
+        assert isinstance(split, SplitItem)
+        self.splits.append(split)
+
+    def get_amount(self):
+        """Returns total amount of transaction"""
+        if self.splits:
+            return sum(s.amount for s in self.splits)
+        else:
+            return self.amount
 
 
 class BankImporter(object):
@@ -168,6 +192,36 @@ class KBImport(BankImporter):
                 yield TransactionData(tdate, tamount, message=tmessage)
 
 
+
+
+def plain_content(element):
+    output = []
+    for child in element:
+        output.append(child.text or '')
+        output.append(plain_content(child))
+        output.append(child.tail or '')
+    return ' '.join(output)
+
+
+@register_importer("mbank-html")
+class MBankHTMLImport(BankImporter):
+    """
+    Convert mBank HTML statements send by e-mail.
+    """
+    input_encoding = 'iso-8859-2'
+
+    def __iter__(self):
+        root = ElementTree.fromstringlist(codecs.iterencode(self.inputreader, 'utf'))
+        table = root.findall('.//table')[5]
+        for row in table[2:-1]:
+            date_str = row.find('.//td[3].nobr').text
+            tdate = datetime.strptime(date_str, '%d.%m.%Y')
+            amount_str = row.find('.//td[5].nobr').text
+            amount_str = amount_str.replace('.', '')
+            tamount = float(normalize_num(amount_str))
+            desc = plain_content(row.find('.//td[4]'))
+            tmessage = normalize_field(desc)
+            yield TransactionData(tdate, tamount, message=tmessage)
 
 
 @register_importer("unicredit")
@@ -301,6 +355,73 @@ class FioImport(BankImporter):
                                   message=tmessage, ident=tident)
 
 
+@register_importer("rb")
+class RaiffeisenBankImport(BankImporter):
+    """
+    Convert RaiffeisenBank statements sent by email (plain text table).
+    """
+    input_encoding = "cp1250"
+    # Delimiter of the headers
+    header_delimiter = '=' * 86
+    # Delimiter between the rows
+    row_delimiter = '-' * 86
+    # Period line pattern
+    period_re = re.compile(ur'Za období \d+\.\d+\.(?P<year>\d+)', re.UNICODE)
+
+    def __iter__(self):
+        year = None
+        delim_counter = 5
+        while delim_counter:
+            row = next(self.inputreader)
+            if row.strip() == self.header_delimiter:
+                delim_counter -= 1
+            match = self.period_re.match(row)
+            if match:
+                year = match.group('year')
+
+        if not year:
+            raise ValueError('Year not found.')
+
+        transaction = TransactionData()
+        row_count = 0
+        for row in self.inputreader:
+            if row.strip() == '':
+                continue
+
+            row_count += 1
+            if row.strip() == self.row_delimiter:
+                # We found delimiter, push the record and start a new one
+                yield transaction
+                transaction = TransactionData()
+                row_count = 0
+                continue
+            if row_count == 1:
+                transaction.date = datetime.strptime('%s%s' % (row[5:11], year), '%d.%m.%Y')
+                message = row[11:33].strip()
+                if message:
+                    transaction.message = message
+                # Main item
+                transaction.add_split(SplitItem(normalize_num(row[55:76]), message))
+                # Transaction fee
+                fee = normalize_num(row[77:86])
+                if fee:
+                    transaction.add_split(SplitItem(fee, 'Poplatek'))
+            elif row_count == 2:
+                destination = row[11:33].strip()
+                if destination:
+                    transaction.destination = destination
+            elif row_count == 3:
+                # Message fee
+                fee = normalize_num(row[77:86])
+                if fee:
+                    transaction.add_split(SplitItem(fee, 'Poplatek'))
+            else:
+                # Additional comments
+                message = transaction.message or ''
+                message += row.strip()
+                transaction.message = message
+
+
 @register_importer("slsp")
 class SlSpImport(BankImporter):
     input_encoding = "cp1250"
@@ -351,13 +472,18 @@ def write_qif(outfile, transactions):
                       transaction.date.month,
                       transaction.date.year)
             outputwriter.write(u"D%s/%s/%s\n" % (m, d, y))
-            outputwriter.write(u"T%s\n" % transaction.amount)
+            outputwriter.write(u"T%.2f\n" % transaction.get_amount())
             if transaction.ident:
                 outputwriter.write(u"#%s\n" % transaction.ident)
             if transaction.message:
                 outputwriter.write(u"M%s\n" % transaction.message)
             if transaction.destination:
                 outputwriter.write(u"P%s\n" % transaction.destination)
+            if len(transaction.splits) > 1:
+                for split in transaction.splits:
+                    if split.message:
+                        outputwriter.write(u"E%s\n" % split.message)
+                    outputwriter.write(u"$%.2f\n" % split.amount)
             outputwriter.write(u'^\n')
 
 
