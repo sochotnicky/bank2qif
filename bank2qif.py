@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 # mbank2qif.py - mBank CSV output convertor to QIF (quicken) file
 # Copyright (C) 2011  Stanislav Ochotnicky <stanislav@ochotnicky.com>
@@ -38,7 +38,8 @@ def unicode_csv_reader(unicode_csv_data, dialect=csv.excel, **kwargs):
                             dialect=dialect, **kwargs)
     for row in csv_reader:
         # decode UTF-8 back to Unicode, cell by cell:
-        yield [unicode(cell, 'utf-8') for cell in row]
+        # yield [unicode(cell, 'utf-8') for cell in row]
+        yield row
 
 
 def utf_8_encoder(unicode_csv_data):
@@ -113,9 +114,50 @@ class BankImporter(object):
     def __init__(self, infile):
         reader = codecs.getreader(self.input_encoding)
         self.inputreader = reader(open(infile, 'r'))
+        self.infile = infile
 
     def __iter__(self):
         pass
+
+
+def translate_headline(line):
+
+    # TODO use CSV?
+    headline_items = line.rstrip('\n').split(';')
+
+    # The following fields are from Czech mBank
+    translation = {
+        '#Datum uskutečnění transakce': 'date',
+        "#Částka transakce": 'amount',
+        "#Popis transakce": 'trans_type',
+        "#Zpráva pro příjemce": 'message',
+        "#Plátce/Příjemce": 'from/to',
+        "#Číslo účtu plátce/příjemce": 'recipient',
+        "#KS": 'ks',
+        "#VS": 'vs',
+        "#SS": 'ss',
+    }
+
+    translated_headline = []
+    for headline_item in headline_items:
+        translated_headline.append(translation.get(headline_item, headline_item))
+    return ';'.join(translated_headline)
+
+
+def dirty_csv_iterator(file):
+
+    with open(file, "rt", encoding="cp1250") as theFile:
+        processing_data = False
+        for line in theFile:
+            if line.startswith("#Datum uskutečnění transakce"):
+                line = translate_headline(line)
+                processing_data = True
+            if processing_data:
+                line = line.rstrip('\n')
+                if len(line) == 0:
+                    raise StopIteration
+                else:
+                    yield line
 
 
 @register_importer("mbank")
@@ -123,41 +165,28 @@ class MBankImport(BankImporter):
     input_encoding = "cp1250"
 
     def __iter__(self):
-        items = False
-        for row in unicode_csv_reader(self.inputreader, delimiter=';'):
-            if not items and len(row) > 0 and (
-                    row[0] == u"#Datum uskutečnění transakce" or
-                    row[0] == u"#Dátum uskutočnenia transakcie"
-                    ):
-                items = True
-                continue
-            if items:
-                if len(row) == 0:
-                    break
-                d, m, y = row[1].split('-')
-                tdate = date(int(y), int(m), int(d))
-                tamount = float(normalize_num(row[9]))
 
-                trans_type = normalize_field(row[2])
-                trans_desc = normalize_field(row[3])
-                trans_target = normalize_field(row[4])
-                trans_acc = normalize_field(row[5])
+        file_iterator = dirty_csv_iterator(self.infile)
+        reader = csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
 
-                # Extract date and the actual description from the "description" field
-                matches = re.match(r"(.+)\s+DATUM PROVEDEN. TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", trans_desc)
-                if matches:
-                    trans_desc = matches.group(1)
-                    tdate = date(int(matches.group(2)), int(matches.group(3)), int(matches.group(4)))
+        for row in reader:
+            d, m, y = row['date'].split('-')
+            tdate = date(int(y), int(m), int(d))
+            tamount = float(normalize_num(row['amount']))
 
-                tmessage = u"%s %s %s %s" % (trans_type,
-                                              trans_desc,
-                                              trans_target,
-                                              trans_acc)
-                
-                # print tmessage
-                # print row
+            trans_type = normalize_field(row['trans_type'])
+            trans_desc = normalize_field(row['message'])
+            trans_target = normalize_field(row['from/to'])
+            trans_acc = normalize_field(row['recipient'])
 
-                yield TransactionData(tdate, tamount, message=tmessage)
+            # Extract date and the actual description from the "description" field
+            matches = re.match(r"(.+)\s+DATUM PROVEDENÍ TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", trans_desc)
+            if matches:
+                trans_desc = matches.group(1)
+                tdate = date(int(matches.group(2)), int(matches.group(3)), int(matches.group(4)))
+
+            tmessage = u"%s %s %s %s" % (trans_type, trans_desc, trans_target, trans_acc)
+            yield TransactionData(tdate, tamount, message=tmessage)
 
 
 @register_importer("kb")
@@ -366,7 +395,7 @@ class RaiffeisenBankImport(BankImporter):
     # Delimiter between the rows
     row_delimiter = '-' * 86
     # Period line pattern
-    period_re = re.compile(ur'Za období \d+\.\d+\.(?P<year>\d+)', re.UNICODE)
+    period_re = re.compile(r'Za období \d+\.\d+\.(?P<year>\d+)', re.UNICODE)
 
     def __iter__(self):
         year = None
@@ -463,7 +492,7 @@ class SlSpImport(BankImporter):
 
 
 def write_qif(outfile, transactions):
-    with open(outfile, 'w') as output:
+    with open(outfile, 'wb') as output:
         writer = codecs.getwriter("utf-8")
         outputwriter = writer(output)
         outputwriter.write("!Type:Bank\n")
