@@ -109,6 +109,8 @@ class BankImporter(object):
 
     multispace_re = re.compile('\s+')
     input_encoding = "utf-8"
+    headline_start = None
+    field_translation = {}
 
     def __init__(self, infile):
         reader = codecs.getreader(self.input_encoding)
@@ -116,155 +118,146 @@ class BankImporter(object):
         self.infile = infile
 
     def __iter__(self):
-        pass
+
+        file_iterator = self.dirty_csv_iterator(self.infile)
+        reader = csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
+
+        for row in reader:
+
+            d, m, y = self.get_dmy(row)
+
+            tdate = date(int(y), int(m), int(d))
+            tamount = float(normalize_num(self.get_amount(row)))
+
+            trans_type = normalize_field(self.get_trans_type(row))
+            trans_desc = normalize_field(self.get_message(row))
+            trans_target = normalize_field(self.get_from_to(row))
+            trans_acc = normalize_field(self.get_acc(row))
+
+            tmessage = u"%s %s %s %s" % (trans_type, trans_desc, trans_target, trans_acc)
+            yield TransactionData(tdate, tamount, message=tmessage)
+
+    def get_dmy(self, row):
+        d, m, y = row['date'].split('-')
+        return d, m, y
+
+    def get_amount(self, row):
+        return row['amount']
+
+    def get_description(self, row):
+        return row['message']
+
+    def get_trans_type(self, row):
+        return row['trans_type']
+
+    def get_message(self, row):
+        return row['message']
+
+    def get_from_to(self, row):
+        return row['from/to']
+
+    def get_acc(self, row):
+        return row['recipient']
+
+    def dirty_csv_iterator(self, file):
+
+        headline_start = self.headline_start
+        field_translation = self.field_translation
+
+        with open(file, "rt", encoding="cp1250") as theFile:
+            processing_data = False
+            for line in theFile:
+
+                if line.startswith(headline_start):
+                    # TODO use CSV?
+                    headline_items = line.rstrip('\n').split(';')
+                    translated_headline = [field_translation.get(h, h) for h in headline_items]
+                    line = ';'.join(translated_headline)
+                    processing_data = True
+
+                if processing_data:
+                    line = line.rstrip('\n')
+                    if len(line) == 0:
+                        raise StopIteration
+                    else:
+                        yield line
 
 
-def translate_headline(line):
-
-    # TODO use CSV?
-    headline_items = line.rstrip('\n').split(';')
-
-    # Message = trans_type, message, from/to, recipient
-
-    translation = {
-
-        # mBank
+@register_importer("mbank")
+class MBankImport(BankImporter):
+    input_encoding = "cp1250"
+    headline_start = "#Datum uskutečnění transakce"
+    field_translation = {
         '#Datum uskutečnění transakce': 'date',
         "#Částka transakce": 'amount',
         "#Popis transakce": 'trans_type',
         "#Zpráva pro příjemce": 'message',
         "#Plátce/Příjemce": 'from/to',
         "#Číslo účtu plátce/příjemce": 'recipient',
+    }
 
-        # AirBank
+    def description_regex(self, desc_field):
+        return re.match(r"(.+)\s+DATUM PROVEDENÍ TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", desc_field)
+
+    def get_description(self, row):
+        matches = self.description_regex(row['message'])
+        if matches:
+            return matches.group(1)
+        else:
+            return row['message']
+
+    def get_dmy(self, row):
+        matches = self.description_regex(row['message'])
+        if matches:
+            return matches.group(4), matches.group(3), matches.group(2)
+        else:
+            return row['date'].split('-')
+
+
+@register_importer("airbank")
+class AirBankImport(BankImporter):
+
+    input_encoding = "cp1250"
+    headline_start = '"Datum provedení"'
+    field_translation = {
         '"Datum provedení"': 'date',
         '"Částka v měně účtu"': 'amount',
         '"Pojmenování příkazu"': 'trans_type',
         '"Poznámka k platbě"': 'message',
         '"Název účtu protistrany"': 'from/to',
         '"Číslo účtu protistrany"': 'recipient',
+    }
 
-        # KB
+    def get_dmy(self, row):
+        return row['date'].split('/')
+
+@register_importer("kb")
+class KBImport(BankImporter):
+    input_encoding = "cp1250"
+    headline_start = '"Datum splatnosti"'
+    field_translation = {
         '"Datum splatnosti"': 'date',
         '"Částka"': 'amount',
         '"AV pole 1"': 'trans_type',
         '"AV pole 2"': 'message',
         '"AV pole 3"': 'from/to',
         '"Název protiúčtu"': 'recipient',
-
     }
 
-    translated_headline = []
-    for headline_item in headline_items:
-        translated_headline.append(translation.get(headline_item, headline_item))
-    return ';'.join(translated_headline)
+    def get_dmy(self, row):
+        # Extract date and the actual description from the "description" field
+        matches = re.match(r"(\d{2}).(\d{2}).(\d{4})\s+\d+,\d{2} CZ", normalize_field(row['AV pole 4']))
+        if matches:
+            return matches.group(1), matches.group(2), matches.group(3)
+        else:
+            return row['date'].split('.')
 
-
-def dirty_csv_iterator(file):
-
-    with open(file, "rt", encoding="cp1250") as theFile:
-        processing_data = False
-        for line in theFile:
-            # mBank, AirBank, KB
-            if line.startswith("#Datum uskutečnění transakce") \
-                    or line.startswith('"Datum provedení"') \
-                    or line.startswith('"Datum splatnosti"'):
-                line = translate_headline(line)
-                processing_data = True
-            if processing_data:
-                line = line.rstrip('\n')
-                if len(line) == 0:
-                    raise StopIteration
-                else:
-                    yield line
-
-
-@register_importer("mbank")
-class MBankImport(BankImporter):
-    input_encoding = "cp1250"
-
-    def __iter__(self):
-
-        file_iterator = dirty_csv_iterator(self.infile)
-        reader = csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
-
-        for row in reader:
-            d, m, y = row['date'].split('-')
-            tdate = date(int(y), int(m), int(d))
-            tamount = float(normalize_num(row['amount']))
-
-            trans_type = normalize_field(row['trans_type'])
-            trans_desc = normalize_field(row['message'])
-            trans_target = normalize_field(row['from/to'])
-            trans_acc = normalize_field(row['recipient'])
-
-            # Extract date and the actual description from the "description" field
-            matches = re.match(r"(.+)\s+DATUM PROVEDENÍ TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", trans_desc)
-            if matches:
-                trans_desc = matches.group(1)
-                tdate = date(int(matches.group(2)), int(matches.group(3)), int(matches.group(4)))
-
-            tmessage = u"%s %s %s %s" % (trans_type, trans_desc, trans_target, trans_acc)
-            yield TransactionData(tdate, tamount, message=tmessage)
-
-
-@register_importer("airbank")
-class AirBankImport(BankImporter):
-    input_encoding = "cp1250"
-
-    def __iter__(self):
-
-        file_iterator = dirty_csv_iterator(self.infile)
-        reader = csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
-
-        for row in reader:
-            d, m, y = row['date'].split('/')
-            tdate = date(int(y), int(m), int(d))
-            tamount = float(normalize_num(row['amount']))
-
-            trans_type = normalize_field(row['trans_type'])
-            trans_desc = normalize_field(row['message'])
-            trans_target = normalize_field(row['from/to'])
-            trans_acc = normalize_field(row['recipient'])
-
-            # Extract date and the actual description from the "description" field
-            matches = re.match(r"(.+)\s+DATUM PROVEDENÍ TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", trans_desc)
-            if matches:
-                trans_desc = matches.group(1)
-                tdate = date(int(matches.group(2)), int(matches.group(3)), int(matches.group(4)))
-
-            tmessage = u"%s %s %s %s" % (trans_type, trans_desc, trans_target, trans_acc)
-            yield TransactionData(tdate, tamount, message=tmessage)
-
-
-@register_importer("kb")
-class KBImport(BankImporter):
-    input_encoding = "cp1250"
-
-    def __iter__(self):
-        file_iterator = dirty_csv_iterator(self.infile)
-        reader = csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
-
-        for row in reader:
-            d, m, y = row['date'].split('.')
-            tdate = date(int(y), int(m), int(d))
-            tamount = float(normalize_num(row['amount']))
-
-            trans_type = normalize_field(row['trans_type'])
-            trans_desc = normalize_field(row['message'])
-            trans_target = normalize_field(row['from/to'])
-            trans_acc = normalize_field(row['recipient'])
-
-            if trans_acc == 'PLATEBNÍ KARTY EC/MC CZK':
-                trans_acc = ''
-
-            # Extract date and the actual description from the "description" field
-            matches = re.match(r"(\d{2}).(\d{2}).(\d{4})\s+\d+,\d{2} CZ", normalize_field(row['AV pole 4']))
-            if matches:
-                tdate = date(int(matches.group(3)), int(matches.group(2)), int(matches.group(1)))
-
-            tmessage = u"%s %s %s %s" % (trans_type, trans_desc, trans_target, trans_acc)
-            yield TransactionData(tdate, tamount, message=tmessage)
+    def get_acc(self, row):
+        trans_acc = normalize_field(row['recipient'])
+        if trans_acc == 'PLATEBNÍ KARTY EC/MC CZK':
+            return ''
+        else:
+            return trans_acc
 
 
 def plain_content(element):
