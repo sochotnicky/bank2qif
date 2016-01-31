@@ -104,7 +104,7 @@ class BankImporter(object):
     """Base class for statement import
 
     To work properly, you need to implement __iter__.
-    Maybe the easyiest way is to call yield ever time
+    Maybe the easiest way is to call yield ever time
     you have new TransactionData."""
 
     multispace_re = re.compile('\s+')
@@ -117,12 +117,12 @@ class BankImporter(object):
         self.inputreader = reader(open(infile, 'r'))
         self.infile = infile
 
-    def __iter__(self):
-
+    def get_transaction_data_iterator(self):
         file_iterator = self.dirty_csv_iterator(self.infile)
-        reader = csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
+        return csv.DictReader(file_iterator, delimiter=';', dialect=csv.excel)
 
-        for row in reader:
+    def __iter__(self):
+        for row in self.get_transaction_data_iterator():
 
             d, m, y = self.get_dmy(row)
 
@@ -135,6 +135,12 @@ class BankImporter(object):
             trans_acc = normalize_field(self.get_acc(row))
 
             tmessage = u"%s %s %s %s" % (trans_type, trans_desc, trans_target, trans_acc)
+            tmessage = tmessage.strip()
+
+            # The following is specific for KB
+            if not tmessage:
+                tmessage = normalize_field(row['Popis příkazce'])
+
             yield TransactionData(tdate, tamount, message=tmessage)
 
     def get_dmy(self, row):
@@ -143,9 +149,6 @@ class BankImporter(object):
 
     def get_amount(self, row):
         return row['amount']
-
-    def get_description(self, row):
-        return row['message']
 
     def get_trans_type(self, row):
         return row['trans_type']
@@ -196,18 +199,19 @@ class MBankImport(BankImporter):
         "#Číslo účtu plátce/příjemce": 'recipient',
     }
 
-    def description_regex(self, desc_field):
+    @staticmethod
+    def _description_regex(desc_field):
         return re.match(r"(.+)\s+DATUM PROVEDENÍ TRANSAKCE: (\d{4})-(\d{2})-(\d{2})", desc_field)
 
-    def get_description(self, row):
-        matches = self.description_regex(row['message'])
+    def get_message(self, row):
+        matches = self._description_regex(row['message'])
         if matches:
             return matches.group(1)
         else:
             return row['message']
 
     def get_dmy(self, row):
-        matches = self.description_regex(row['message'])
+        matches = self._description_regex(row['message'])
         if matches:
             return matches.group(4), matches.group(3), matches.group(2)
         else:
@@ -258,6 +262,53 @@ class KBImport(BankImporter):
             return ''
         else:
             return trans_acc
+
+
+@register_importer("csob")
+class CsobImport(BankImporter):
+    input_encoding = "cp1250"
+    headline_start = 'datum zaúčtování'
+    field_translation = {
+        'datum zaúčtování': 'date',
+        'částka': 'amount',
+        'označení operace': 'trans_type',
+        'poznámka': 'message',
+        'název protiúčtu': 'from/to',
+        'protiúčet': 'recipient',
+    }
+
+    def get_dmy(self, row):
+        d, m, y = row['date'].split('.')
+        return d, m, y
+
+    def get_transaction_data_iterator(self):
+        return self.dirty_line_iterator(self.infile)
+
+    def dirty_line_iterator(self, file):
+
+        headline_start = self.headline_start
+        field_translation = self.field_translation
+
+        with open(file, "rt") as theFile:
+            transaction_data = None
+            for line in theFile:
+
+                # Initialize transaction data on the first valid line
+                if line.startswith(headline_start):
+                    transaction_data = {}
+
+                if transaction_data is not None:
+                    # Return the transaction on next blank line
+                    if re.match(r'^\s+$', line):
+                        yield transaction_data
+                        transaction_data = None
+                    # Capture transaction info
+                    else:
+                        kv_pair = line.rstrip('\n').split(':')
+                        key = kv_pair[0].strip()
+                        value = kv_pair[1].strip()
+                        translated_key = field_translation.get(key, key)
+                        transaction_data[translated_key] = value
 
 
 def plain_content(element):
